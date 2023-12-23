@@ -111,6 +111,7 @@ const userbase = async (options) => {
         }
         else {
           await put(referralUserName, referralpublicKey);
+          return true;
         }
       }
     }
