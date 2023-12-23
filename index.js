@@ -122,7 +122,7 @@ const userbase = async (options) => {
     else {
       resolve({ lookup: get });
     }
-  };
+  });
 };
 
 module.exports = userbase;
