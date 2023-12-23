@@ -1,0 +1,33 @@
+{
+  "name": "userbase",
+  "version": "0.0.1",
+  "description": "A referree / Referral system",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/benzmuircroft/userbase"
+  },
+  "dependencies": {
+    "@lejeunerenard/autobase-manager": "github:lejeunerenard/autobase-manager#1.2.0",
+    "autobase": "github:holepunchto/autobase#v1.0.0-alpha.9",
+    "hyperbee": "2.18.1",
+    "corestore": "^6.15.13",
+    "hyperswarm": "^4.7.13",
+    "keypear": "^1.2.0",
+    "b4a": "^1.6.0",
+    "graceful-goodbye": "^1.2.1"
+  },
+  "keywords": [
+    "local-first",
+    "offline-first",
+    "distributed",
+    "p2p",
+    "hypercore",
+    "corestore",
+    "hyperswarm",
+    "database",
+    "autobase"
+  ],
+  "author": "Benz Muircroft",
+  "license": "MIT"
+}
