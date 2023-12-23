@@ -6,6 +6,9 @@ const userbase = async (options) => {
     const AutobaseManager = (await import('@lejeunerenard/autobase-manager')).AutobaseManager;
     const Hyperbee = require('hyperbee');
     const Hyperswarm = require('hyperswarm');
+    const Keychain = (await import('keypear')).default;
+    const b4a = require('b4a');
+    const goodbye = (await import('graceful-goodbye')).default;
 
     if (!options) {
       throw new Error('options object is missing');
@@ -80,6 +83,7 @@ const userbase = async (options) => {
       const stream = store.replicate(socket);
       manager.attachStream(stream); // Attach manager
     });
+    goodbye(() => swarm.destroy());
 
     const get = async function(key) {
       await base.latest(base.inputs);
@@ -99,7 +103,10 @@ const userbase = async (options) => {
 
     async function register(reffereeUserName, referralUserName, referralpublicKey) {
       if (!reffereeUserName || !referralUserName || !referralpublicKey) throw new Error('malformed details');
-      if (!await get(reffereeUserName)) {
+      if (reffereeUserName == 'root') {
+        await put(referralUserName, referralpublicKey);
+      }
+      else if (!await get(reffereeUserName)) {
         return 'refferee username does not exist';
       }
       else {
@@ -108,7 +115,6 @@ const userbase = async (options) => {
         }
         else {
           await put(referralUserName, referralpublicKey);
-          return true;
         }
       }
     }
