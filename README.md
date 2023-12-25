@@ -1,4 +1,4 @@
-# 🕳🥊 userbase
+# 🕳🥊 Userbase
 
 ## Installation
 ```
