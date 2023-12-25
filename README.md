@@ -33,6 +33,6 @@ let user2 = {
 let success = await userbase.register(user1.reffereeUserName, user1.referralUserName, user1.referralpublicKey);
 console.log(success); // bool (the reffereeUserName must first exist and the referralUserName must not exist);
 
-console.log(await userbase.lookup(alice));
+console.log(await userbase.lookup('alice'));
 // should return a publicKey
 ```
