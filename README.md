@@ -56,6 +56,14 @@ console.log(success); // bool (the reffereeUserName must first exist and the ref
 
 console.log(await userbase.lookup('alice'));
 // should return a publicKey
+
+// handle errors
+
+let success = await userbase.register('noneExitsUser', user1.referralUserName, user1.referralpublicKey); // false
+
+let success = await userbase.register(user1.reffereeUserName, 'bob', user1.referralpublicKey); // username bob already exists
+
+console.log(await userbase.lookup('noneExitsUser')); // null
   
 })();
 ```
