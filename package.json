@@ -1,7 +1,7 @@
 {
   "name": "userbase",
   "version": "0.0.1",
-  "description": "A referree / Referral system",
+  "description": "A user invite-only registration systemm",
   "main": "index.js",
   "repository": {
     "type": "git",
