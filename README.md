@@ -1,4 +1,5 @@
 # 🕳🥊 Userbase
+A user invite-only registration system
 
 ## Installation
 ```
