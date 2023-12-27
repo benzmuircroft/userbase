@@ -83,6 +83,8 @@ const userbase = async (options) => {
       const stream = store.replicate(socket);
       manager.attachStream(stream); // Attach manager
     });
+    await swarm.join(b4a.alloc(32).fill(options.folderName), { server: true, client: true });
+    await swarm.flush();
     goodbye(() => swarm.destroy());
 
     const get = async function(key) {
