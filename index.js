@@ -6,34 +6,17 @@ const userbase = async (options) => {
     const AutobaseManager = (await import('@lejeunerenard/autobase-manager')).AutobaseManager;
     const Hyperbee = require('hyperbee');
     const Hyperswarm = require('hyperswarm');
-    const Keychain = (await import('keypear')).default;
     const b4a = require('b4a');
     const goodbye = (await import('graceful-goodbye')).default;
 
     if (!options) {
       throw new Error('options object is missing');
     }
-    else if (!options.uniqueKeyPair) {
-      throw new Error('options.uniqueKeyPair should be a KeyChain or keyPair. see: https://github.com/holepunchto/keypear');
-    }
     else if (!options.folderName || typeof options.folderName !== 'string') {
       throw new Error('options.folderName should be a string');
     }
     else if (options.testFolder && typeof options.testFolder !== 'string') {
       throw new Error('options.testFolder should be a string');
-    }
-
-    if (!options.uniqueKeyPair.publicKey) {
-      if (typeof options.uniqueKeyPair.get == 'function') {
-        keyPair = options.uniqueKeyPair.get();
-      }
-      else {
-        throw new Error('options.uniqueKeyPair should be a KeyChain or keyPair. see: https://github.com/holepunchto/keypear');
-      }
-    }
-    else {
-      keyPair = new Keychain(options.uniqueKeyPair);
-      keyPair = keyPair.get();
     }
 
     let folder = `./${options.folderName}`;
