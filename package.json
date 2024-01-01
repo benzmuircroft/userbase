@@ -13,7 +13,6 @@
     "hyperbee": "github:holepunchto/hyperbee#cas-prev-null",
     "corestore": "^6.15.13",
     "hyperswarm": "^4.7.13",
-    "keypear": "^1.2.0",
     "b4a": "^1.6.0",
     "graceful-goodbye": "^1.2.1"
   },
