@@ -2,15 +2,8 @@
 
   const Keychain = (await import('keypear')).default; // https://github.com/holepunchto/keypear
   const b4a = require('b4a');
-
-
-  const kpbase = new Keychain({
-    scalar: b4a.from('808a6e175b246bc93d4adaada45d49c031296efb36da7fdf3c5128d3eb46fd5e', 'hex'),
-    publicKey: b4a.from('9b0e5bf749a3fd55ca5d08b225962bae6c0c826d9822a79e36b1871b50da82fe', 'hex')
-  }).get();
   
   const userbase = await require('userbase')({
-    uniqueKeyPair: kpbase,
     folderName: 'folderName',
     testFolder: 'user1' // only needed if testing multiple instances in the same script
   });
