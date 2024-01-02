@@ -26,9 +26,12 @@ const userbase = async (options) => {
     
     const store = new Corestore(folder);
     await store.ready();
+    if (options.loadingFunction) options.loadingFunction(options.loadingNumber ++);
     let input = store.get({ name: 'input' });
     let output = store.get({ name: 'output' });
+    if (options.loadingFunction) options.loadingFunction(options.loadingNumber ++);
     await input.ready();
+    if (options.loadingFunction) options.loadingFunction(options.loadingNumber ++);
     await output.ready();
     base = new Autobase({
       inputs: [input],
@@ -50,6 +53,7 @@ const userbase = async (options) => {
         extension: false
       })
     });
+    if (options.loadingFunction) options.loadingFunction(options.loadingNumber ++);
     await base.ready();
     const manager = new AutobaseManager(
       base,
@@ -58,6 +62,7 @@ const userbase = async (options) => {
       store.storage, // Storage for managing autobase keys
       { id: options.folderName } // Options
     );
+    if (options.loadingFunction) options.loadingFunction(options.loadingNumber ++);
     await manager.ready();
 
     swarm = new Hyperswarm();
@@ -66,7 +71,9 @@ const userbase = async (options) => {
       const stream = store.replicate(socket);
       manager.attachStream(stream); // Attach manager
     });
+    if (options.loadingFunction) options.loadingFunction(options.loadingNumber ++);
     await swarm.join(b4a.alloc(32).fill(options.folderName), { server: true, client: true });
+    if (options.loadingFunction) options.loadingFunction(options.loadingNumber ++);
     await swarm.flush();
     goodbye(() => swarm.destroy());
 
