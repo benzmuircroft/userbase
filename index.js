@@ -97,11 +97,11 @@ const userbase = async (options) => {
       if (!reffereeUserName || !referralUserName || !referralpublicKey) throw new Error('malformed details');
       if (reffereeUserName != 'root' && !await get('root')) throw new Error('root username needs to exist first');
       if (referralUserName != 'root' && !await get(reffereeUserName)) {
-        return 'refferee username does not exist';
+        return 'ether the reffereeUserName does not exist or the referralUserName exists';
       }
       else {
         if (await get(referralUserName)) {
-          return 'username exists';
+          return 'ether the reffereeUserName does not exist or the referralUserName exists';
         }
         else {
           await put(referralUserName, referralpublicKey);
