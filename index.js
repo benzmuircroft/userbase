@@ -96,11 +96,7 @@ const userbase = async (options) => {
     async function register(reffereeUserName, referralUserName, referralpublicKey) {
       if (!reffereeUserName || !referralUserName || !referralpublicKey) throw new Error('malformed details');
       if (reffereeUserName != 'root' && !await get('root')) throw new Error('root username needs to exist first');
-      if (referralUserName == 'root') {
-        await put(referralUserName, referralpublicKey);
-        return 'success';
-      }
-      else if (!await get(reffereeUserName)) {
+      if (!await get(reffereeUserName) && referralUserName != 'root') {
         return 'refferee username does not exist';
       }
       else {
