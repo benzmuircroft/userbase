@@ -100,12 +100,13 @@ const userbase = async (options) => {
         return 'ether the reffereeUserName does not exist or the referralUserName exists';
       }
       else {
-        if (await get(referralUserName)) {
+        const already = await get(referralUserName);
+        if (already !== 'referralpublicKey') {
           return 'ether the reffereeUserName does not exist or the referralUserName exists';
         }
         else {
           register = null;
-          await put(referralUserName, referralpublicKey);
+          if (!already) await put(referralUserName, referralpublicKey);
           return 'success';
         }
       }
