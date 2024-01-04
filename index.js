@@ -104,6 +104,7 @@ const userbase = async (options) => {
           return 'ether the reffereeUserName does not exist or the referralUserName exists';
         }
         else {
+          register = null;
           await put(referralUserName, referralpublicKey);
           return 'success';
         }
