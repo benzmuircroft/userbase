@@ -101,7 +101,7 @@ const userbase = async (options) => {
       }
       else {
         const already = await get(referralUserName);
-        if (already !== referralpublicKey) {
+        if (already && already !== referralpublicKey) {
           return 'ether the reffereeUserName does not exist or the referralUserName exists';
         }
         else {
