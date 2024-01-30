@@ -4,7 +4,7 @@ const userbase = async (options) => {
     const Corestore = require('corestore');
     const Autobase = require('autobase');
     const AutobaseManager = (await import('@lejeunerenard/autobase-manager')).AutobaseManager;
-    const Hyperbee = require('Hyperbee');
+    const Hyperbee = require('hyperbee');
     const Hyperswarm = require('hyperswarm');
     const b4a = require('b4a');
     const goodbye = (await import('graceful-goodbye')).default;
