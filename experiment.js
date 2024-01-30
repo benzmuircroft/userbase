@@ -146,8 +146,7 @@ const userbase = async (options) => {
       // reload with your keyPair
     }
     
-    if (options.keyPair) await restartbase('wait', options);
-    else await restartbase('wait', options);
+    await restartbase('wait', options);
 
     let ub;
 
