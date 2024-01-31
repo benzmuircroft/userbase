@@ -10,6 +10,8 @@ const userbase = async (options) => {
     const b4a = require('b4a');
     const crypto = require('hypercore-crypto');
     const goodbye = (await import('graceful-goodbye')).default;
+    const RAM = require('random-access-memory');
+    const fs = (await require('fs')).promises;
 
     if (!options) {
       throw new Error('options object is missing');
@@ -21,22 +23,37 @@ const userbase = async (options) => {
       throw new Error('options.testFolder should be a string');
     }
 
-    let folder = `./${options.folderName}`;
-    if (options.testFolder) {
-      folder += `/${options.testFolder}`;
+    let input, base, swarm, secret, ub;
+
+    try {
+      let core = new Hypercore('./db/db', { valueEncoding: 'utf8', createIfMissing: false });
+      await core.ready();
+      secret = options.aes.de((await core.get(core.length - 1)).toString('hex'));
+      console.log('secret:', secret);
+      options.keyPair = crypto.keyPair(b4a.from(secret));
+      await core.close();
+    } catch (e) {
+      console.log(e);
     }
 
-    let input, secret;
+    console.log('loading options', options);
 
-    async function restartbase(task, options, reffereeUserName, referralUserName, profile) {
-      const store = new Corestore(folder);
+    async function restartBase(task, options, reffereeUserName, referralUserName, profile) {
+      
+      if (!options.keyPair) {
+        try {
+          await fs.rm(options.folderName, { recursive: true });
+          console.log('removed userbase');
+        } catch (e) {}
+      }
+      const store = new Corestore(options.keyPair ? options.folderName : RAM);
       await store.ready();
-      if (options.loadingFunction && !options.keyPair) options.loadingFunction(options.loadingNumber ++);
-      if (options.keyPair) input = store.get({ name: 'input' });
-      let output = store.get({ keyPair: options.keyPair });
-      if (options.loadingFunction && !options.keyPair) options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      if (options.keyPair) input = store.get({ keyPair: options.keyPair });
+      let output = store.get({ name: 'output' });
+      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
       if (options.keyPair) await input.ready();
-      if (options.loadingFunction && !options.keyPair) options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
       await output.ready();
       base = new Autobase({
         inputs: (options.keyPair)? [input] : [],
@@ -58,7 +75,7 @@ const userbase = async (options) => {
           extension: false
         })
       });
-      if (options.loadingFunction && !options.keyPair) options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
       await base.ready();
       const manager = new AutobaseManager(
         base,
@@ -67,95 +84,168 @@ const userbase = async (options) => {
         store.storage, // Storage for managing autobase keys
         { id: options.folderName } // Options
       );
-      if (options.loadingFunction && !options.keyPair) options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
       await manager.ready();
       
-      if (!options.keyPair) {
-        swarm = new Hyperswarm();
-        const clients = {};
-        swarm.on('connection', function(socket) {
-          const stream = store.replicate(socket);
-          manager.attachStream(stream); // Attach manager
-        });
-        if (options.loadingFunction) options.loadingFunction(options.loadingNumber ++);
-        await swarm.join(b4a.alloc(32).fill(options.folderName), { server: true, client: true });
-        if (options.loadingFunction) options.loadingFunction(options.loadingNumber ++);
-        await swarm.flush();
-        goodbye(() => swarm.destroy());
+      
+      swarm = new Hyperswarm();
+      const clients = {};
+      swarm.on('connection', function(socket) {
+        const stream = store.replicate(socket);
+        manager.attachStream(stream); // Attach manager
+      });
+      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      await swarm.join(b4a.alloc(32).fill(options.folderName), { server: true, client: true });
+      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      await swarm.flush();
+      goodbye(() => swarm.destroy());
+      
+      
+      if (task == 'register') {
+        console.log('doing register');
+        await register(reffereeUserName, referralUserName, profile);
       }
-  
-      const get = async function(key) {
-        await base.latest(base.inputs);
-        await base.view.update({ wait: true });
-        key = await base.view.get(key);
-        if (!key) return key;
-        key.value = key.value.toString();
-        if (['[', '{'].includes(key.value[0])) return JSON.parse(key.value);
-        return key.value;
-      };
-      const set = async function(key, value) {
-        const op = b4a.from(JSON.stringify({ type: 'put', key, value: JSON.stringify(value) }));
-        await base.append(op);
-        await base.view.update({ wait: true });
-        await base.latest(base.inputs);
-      };
+    }
 
-      const put = async function() {
-        console.log('put is dissabled');
-      };
-  
-      async function register(reffereeUserName, referralUserName, profile) {
-        if (!reffereeUserName || !referralUserName || !profile) throw new Error('malformed details');
-        if (reffereeUserName != 'root' && !await get('root')) throw new Error('root username needs to exist first');
-        if (referralUserName != 'root' && !await get(reffereeUserName)) {
-          return 'ether the reffereeUserName does not exist or the referralUserName exists';
+    const get = async function(key) {
+      await base.latest(base.inputs);
+      await base.view.update({ wait: true });
+      key = await base.view.get(key);
+      if (!key) return key;
+      key.value = key.value.toString();
+      if (['[', '{'].includes(key.value[0])) return JSON.parse(key.value);
+      return key.value;
+    };
+    const set = async function(key, value) {
+      const op = b4a.from(JSON.stringify({ type: 'put', key, value: JSON.stringify(value) }));
+      await base.append(op);
+      await base.view.update({ wait: true });
+      await base.latest(base.inputs);
+    };
+
+    const put = async function() {
+      console.log('put is dissabled');
+    };
+
+    async function recover(username, secret) {
+      ub.success = null;
+      ub.secret = null;
+      const keyPair = crypto.keyPair(b4a.from(secret));
+      let hasdbdb = false;
+      try { 
+        await fs.stat('./db/db');
+        hasdbdb = true;
+      } catch (e) {}
+      if (hasdbdb) {
+        await fs.rm('./db/db', { recursive: true });
+        await base.close();
+        swarm.destroy();
+        await restartBase('wait', options); // had to restart it without the local input
+      }
+      const profile = await get(username);
+      if (!profile) {
+        ub.success = 'fail no profile';
+        return;
+      }
+      else {
+        console.log(profile);
+        const verified = crypto.verify(b4a.from(username), b4a.from(profile.sig, 'hex'), keyPair.publicKey);
+        if (!verified) {
+          ub.success = 'fail verifier';
+          return;
         }
         else {
-          const already = await get(referralUserName);
-          if (already && already !== referralpublicKey) {
-            return 'ether the reffereeUserName does not exist or the referralUserName exists';
-          }
-          else {
-            register = null;
-            if (!already) {
-              if (!options.keyPair) {
-                await base.close();
+          const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
+          await core.ready();
+          await core.append(b4a.from(options.aes.en(secret)));
+          await core.close();
+          await base.close();
+          swarm.destroy();
+          ub.success = 'success';
+          return;
+        }
+      }
+    }
+
+    async function login(pin, username) {
+      ub.success = null;
+      ub.secret = null;
+      // read ./db/db to get secret
+      // 
+      // reload with your keyPair
+    }
+  
+    async function register(reffereeUserName, referralUserName, profile) {
+      ub.success = null;
+      ub.secret = null;
+      console.log('hit', options);
+      if (!reffereeUserName || !referralUserName || !profile) throw new Error('malformed details');
+      if (reffereeUserName != 'root' && !await get('root')) throw new Error('root username needs to exist first');
+      if (referralUserName != 'root' && !await get(reffereeUserName)) {
+        console.log(0, reffereeUserName, await get(reffereeUserName));
+        ub.success = 'ether the reffereeUserName does not exist or the referralUserName exists';
+        return;
+      }
+      else {
+        console.log(1);
+        const already = await get(referralUserName);
+        if (already && already !== referralpublicKey) {
+          console.log(2);
+          ub.success = 'ether the reffereeUserName does not exist or the referralUserName exists';
+          return;
+        }
+        else {
+          console.log(3);
+          if (!already) {
+            console.log(5);
+            if (!options.keyPair) {
+              console.log(6);
+              await base.close();
+              swarm.destroy();
+              console.log('locked here?');
+              if (!secret) {
                 secret = crypto.randomBytes(16).toString('hex');
                 options.keyPair = crypto.keyPair(b4a.from(secret));
+                try { await fs.rm('./db/db', { recursive: true }); } catch (e) {}
                 const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
                 await core.ready();
                 await core.append(b4a.from(options.aes.en(secret)));
                 await core.close();
-                await restartbase(task, options, reffereeUserName, referralUserName, profile);
+                console.log('not locked here!');
               }
-              else {
-                await set(referralUserName, profile);
-                ub.put = set;
-                return { success: 'success', secret };
-              }
+              console.log('real start');
+              await restartBase('register', options, reffereeUserName, referralUserName, profile);
             }
+            else {
+              console.log('real end');
+              register = null;
+              profile.sig = crypto.sign(b4a.from(profile._id), options.keyPair.secretKey).toString('hex');
+              await set(referralUserName, profile);
+              ub.put = set;
+              ub.login = login;
+              console.log('yes');
+              ub.success = 'success';
+              ub.secret = secret;
+              return;
+            }
+          }
+          else {
+            throw new Error('Unhandled userbase error');
           }
         }
       }
-      if (task == 'register') await register(reffereeUserName, referralUserName, profile);
     }
 
-    async function recover(secret, username) {
-      // secret to keyPair
-      // read and compair the base
-      // reload with your keyPair
-    }
-    
-    await restartbase('wait', options);
-
-    let ub;
+    await restartBase('wait', options);
 
     if (!options.keyPair) {
       ub = { lookup: get, register, recover, put, close: base.close };
+      console.log(ub);
       resolve(ub);
     }
     else {
-      ub = { lookup: get, put: set, close: base.close };
+      console.log('b');
+      ub = { lookup: get, put: set, close: base.close, login, recover };
       resolve(ub);
     }
   });
