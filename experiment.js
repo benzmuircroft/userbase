@@ -202,6 +202,7 @@ const userbase = async (options) => {
               await restartBase('register', options, reffereeUserName, referralUserName, profile);
             }
             else {
+              // return new Promise ((resolve) => { resolve([success, secret]); }); // ?
               register = null;
               profile.sig = crypto.sign(b4a.from(profile._id), options.keyPair.secretKey).toString('hex');
               await _put(referralUserName, profile);
