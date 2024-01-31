@@ -224,7 +224,7 @@ const userbase = async (options) => {
       resolve(ub);
     }
     else {
-      ub = { lookup: get, put: set, close: base.close, login, recover };
+      ub = { lookup: get, put: _put, close: base.close, login, recover };
       resolve(ub);
     }
   });
