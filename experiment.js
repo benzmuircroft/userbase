@@ -29,21 +29,18 @@ const userbase = async (options) => {
       let core = new Hypercore('./db/db', { valueEncoding: 'utf8', createIfMissing: false });
       await core.ready();
       secret = options.aes.de((await core.get(core.length - 1)).toString('hex'));
-      console.log('secret:', secret);
       options.keyPair = crypto.keyPair(b4a.from(secret));
       await core.close();
     } catch (e) {
-      console.log(e);
+      // console.log(e);
     }
 
-    console.log('loading options', options);
 
     async function restartBase(task, options, reffereeUserName, referralUserName, profile) {
       
       if (!options.keyPair) {
         try {
           await fs.rm(options.folderName, { recursive: true });
-          console.log('removed userbase');
         } catch (e) {}
       }
       const store = new Corestore(options.keyPair ? options.folderName : RAM);
@@ -102,7 +99,6 @@ const userbase = async (options) => {
       
       
       if (task == 'register') {
-        console.log('doing register');
         await register(reffereeUserName, referralUserName, profile);
       }
     }
@@ -116,7 +112,7 @@ const userbase = async (options) => {
       if (['[', '{'].includes(key.value[0])) return JSON.parse(key.value);
       return key.value;
     };
-    const set = async function(key, value) {
+    const _put = async function(key, value) {
       const op = b4a.from(JSON.stringify({ type: 'put', key, value: JSON.stringify(value) }));
       await base.append(op);
       await base.view.update({ wait: true });
@@ -148,7 +144,6 @@ const userbase = async (options) => {
         return;
       }
       else {
-        console.log(profile);
         const verified = crypto.verify(b4a.from(username), b4a.from(profile.sig, 'hex'), keyPair.publicKey);
         if (!verified) {
           ub.success = 'fail verifier';
@@ -178,31 +173,23 @@ const userbase = async (options) => {
     async function register(reffereeUserName, referralUserName, profile) {
       ub.success = null;
       ub.secret = null;
-      console.log('hit', options);
       if (!reffereeUserName || !referralUserName || !profile) throw new Error('malformed details');
       if (reffereeUserName != 'root' && !await get('root')) throw new Error('root username needs to exist first');
       if (referralUserName != 'root' && !await get(reffereeUserName)) {
-        console.log(0, reffereeUserName, await get(reffereeUserName));
         ub.success = 'ether the reffereeUserName does not exist or the referralUserName exists';
         return;
       }
       else {
-        console.log(1);
         const already = await get(referralUserName);
         if (already && already !== referralpublicKey) {
-          console.log(2);
           ub.success = 'ether the reffereeUserName does not exist or the referralUserName exists';
           return;
         }
         else {
-          console.log(3);
           if (!already) {
-            console.log(5);
             if (!options.keyPair) {
-              console.log(6);
               await base.close();
               swarm.destroy();
-              console.log('locked here?');
               if (!secret) {
                 secret = crypto.randomBytes(16).toString('hex');
                 options.keyPair = crypto.keyPair(b4a.from(secret));
@@ -211,26 +198,19 @@ const userbase = async (options) => {
                 await core.ready();
                 await core.append(b4a.from(options.aes.en(secret)));
                 await core.close();
-                console.log('not locked here!');
               }
-              console.log('real start');
               await restartBase('register', options, reffereeUserName, referralUserName, profile);
             }
             else {
-              console.log('real end');
               register = null;
               profile.sig = crypto.sign(b4a.from(profile._id), options.keyPair.secretKey).toString('hex');
-              await set(referralUserName, profile);
-              ub.put = set;
+              await _put(referralUserName, profile);
+              ub.put = _put;
               ub.login = login;
-              console.log('yes');
               ub.success = 'success';
               ub.secret = secret;
               return;
             }
-          }
-          else {
-            throw new Error('Unhandled userbase error');
           }
         }
       }
@@ -240,11 +220,9 @@ const userbase = async (options) => {
 
     if (!options.keyPair) {
       ub = { lookup: get, register, recover, put, close: base.close };
-      console.log(ub);
       resolve(ub);
     }
     else {
-      console.log('b');
       ub = { lookup: get, put: set, close: base.close, login, recover };
       resolve(ub);
     }
