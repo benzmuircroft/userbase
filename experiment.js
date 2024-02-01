@@ -7,6 +7,7 @@ const userbase = async (options) => {
     const Hyperbee = require('hyperbee');
     const Hyperswarm = require('hyperswarm');
     const Hypercore = require('hypercore');
+    const DHT = require('hyperdht');
     const b4a = require('b4a');
     const crypto = require('hypercore-crypto');
     const goodbye = (await import('graceful-goodbye')).default;
@@ -22,25 +23,31 @@ const userbase = async (options) => {
     else if (options.testFolder && typeof options.testFolder !== 'string') {
       throw new Error('options.testFolder should be a string');
     }
+    if (!options.encrypt || !options.decrypt) {
+      throw new Error('both options.encrypt and options.decrypt custom methods are required');
+    }
+    if (!options.quit || typeof options.quit != 'function') {
+      throw new Error('options.quit is expected to be a function that closes the app to stop multiple writers');
+    }
 
     let input, base, swarm, secret, ub;
 
     try {
       let core = new Hypercore('./db/db', { valueEncoding: 'utf8', createIfMissing: false });
       await core.ready();
-      secret = options.aes.de((await core.get(core.length - 1)).toString('hex'));
+      secret = options.decrypt((await core.get(core.length - 1)).toString('hex'));
+      console.log('secret:', secret);
       options.keyPair = crypto.keyPair(b4a.from(secret));
       await core.close();
     } catch (e) {
-      // console.log(e);
+      console.log(e);
     }
 
-
-    async function restartBase(task, options, reffereeUserName, referralUserName, profile) {
-      
+    async function restartBase(task, options, reffereeUserName, referralUserName, profile, resolve) {
       if (!options.keyPair) {
         try {
           await fs.rm(options.folderName, { recursive: true });
+          console.log('removed userbase');
         } catch (e) {}
       }
       const store = new Corestore(options.keyPair ? options.folderName : RAM);
@@ -83,8 +90,6 @@ const userbase = async (options) => {
       );
       if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
       await manager.ready();
-      
-      
       swarm = new Hyperswarm();
       const clients = {};
       swarm.on('connection', function(socket) {
@@ -96,10 +101,9 @@ const userbase = async (options) => {
       if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
       await swarm.flush();
       goodbye(() => swarm.destroy());
-      
-      
       if (task == 'register') {
-        await register(reffereeUserName, referralUserName, profile);
+        console.log('doing register');
+        await register(reffereeUserName, referralUserName, profile, resolve);
       }
     }
 
@@ -112,7 +116,8 @@ const userbase = async (options) => {
       if (['[', '{'].includes(key.value[0])) return JSON.parse(key.value);
       return key.value;
     };
-    const _put = async function(key, value) {
+
+    const _put = async function(key, value) { 
       const op = b4a.from(JSON.stringify({ type: 'put', key, value: JSON.stringify(value) }));
       await base.append(op);
       await base.view.update({ wait: true });
@@ -124,93 +129,158 @@ const userbase = async (options) => {
     };
 
     async function recover(username, secret) {
-      ub.success = null;
-      ub.secret = null;
-      const keyPair = crypto.keyPair(b4a.from(secret));
-      let hasdbdb = false;
-      try { 
-        await fs.stat('./db/db');
-        hasdbdb = true;
-      } catch (e) {}
-      if (hasdbdb) {
-        await fs.rm('./db/db', { recursive: true });
-        await base.close();
-        swarm.destroy();
-        await restartBase('wait', options); // had to restart it without the local input
-      }
-      const profile = await get(username);
-      if (!profile) {
-        ub.success = 'fail no profile';
-        return;
-      }
-      else {
-        const verified = crypto.verify(b4a.from(username), b4a.from(profile.sig, 'hex'), keyPair.publicKey);
-        if (!verified) {
-          ub.success = 'fail verifier';
-          return;
-        }
-        else {
-          const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
-          await core.ready();
-          await core.append(b4a.from(options.aes.en(secret)));
-          await core.close();
-          await base.close();
-          swarm.destroy();
-          ub.success = 'success';
-          return;
-        }
-      }
+      return new Promise((resolve) => {
+        ;(async function () {
+          const keyPair = crypto.keyPair(b4a.from(secret));
+          let hasdbdb = false;
+          try { 
+            await fs.stat('./db/db');
+            hasdbdb = true;
+          } catch (e) {}
+          if (hasdbdb) {
+            await fs.rm('./db/db', { recursive: true });
+            await base.close();
+            swarm.destroy();
+            await restartBase('wait', options); // had to restart it without the local input
+          }
+          const profile = await get(username);
+          if (!profile) {
+            resolve('fail no profile');
+          }
+          else {
+            console.log(profile);
+            const verified = crypto.verify(b4a.from(username), b4a.from(profile.sig, 'hex'), keyPair.publicKey);
+            if (!verified) {
+              resolve('fail verifier');
+            }
+            else {
+              const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
+              await core.ready();
+              await core.append(b4a.from(options.encrypt(secret)));
+              await core.close();
+              await base.close();
+              swarm.destroy();
+              ub.login = login;
+              delete ub.register;
+              resolve('success');
+            }
+          }
+        })();
+      });
     }
 
-    async function login(pin, username) {
-      ub.success = null;
-      ub.secret = null;
-      // read ./db/db to get secret
-      // 
-      // reload with your keyPair
+    const knockout = async (yourPublicKey) => { // find out if the user is already running a server on the DHT and send them a boot out message before any login!
+      return new Promise((resolve) => {
+        ;(async function(yourPublicKey, resolve) {
+          const phone = new DHT(); // make a phone call to a user
+          await phone.ready();
+          let call = phone.connect(yourPublicKey);
+          call.on('open', function () {
+            console.log('Client connected!');
+            call.write(b4a.from(JSON.stringify({ punch: true }))); // knock them out!
+            call.end();
+            resolve(true);
+          });
+          call.on('error', function (err) {
+            console.log('Client errored:', err);
+            resolve(false);
+          });
+        })(yourPublicKey, resolve);
+      });
+    };
+
+    async function login(password, username, calls, onData) {
+      return new Promise((resolve) => {
+        ;(async function (password, username, calls, onData, resolve) {
+          const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
+          await core.ready();
+          const secret = options.decrypt((await core.get(core.length - 1)).toString('hex'));
+          await core.close();
+          const keyPair = crypto.keyPair(b4a.from(secret));
+          const pin = secret.substring(0, 3) + secret.substring(secret.length - 3);
+          if (password !== pin) {
+            resolve([false]);
+          }
+          else {
+            console.log(await knockout(keyPair.publicKey));
+            const node = new DHT({ keyPair });
+            const phone = node.createServer();
+            calls = [];
+            phone.on('connection', function (soc) {
+              calls[soc.remotePublicKey.toString('hex')] = soc;
+              soc.on('data', async function (d) {
+                let er;
+                try { d = JSON.parse(d); }
+                catch (e) { er = e; }
+                if (!er) {
+                  if (d.punch) options.quit();
+                  else await onData(soc, d);
+                }
+              });
+              soc.on('error', function (e) {
+                console.trace(e);
+              });
+              soc.once('close', function() {
+                delete calls[soc.remotePublicKey.toString('hex')];
+              });
+            });
+            await phone.listen();
+            let cache = await ub.lookup(username);
+            let throttle;
+            resolve(['success', {
+              _id: username,
+              get: async function() { console.log(username);return await ub.lookup(username); },
+              put: async function(o) {
+                cache = o;
+                clearTimeout(throttle);
+                throttle = setTimeout(async function (username, o) { await ub.put(username, o); }, 100, username, o);
+              },
+              close: ub.close
+            }]);
+          }
+        })(password, username, calls, onData, resolve);
+      });
     }
   
-    async function register(reffereeUserName, referralUserName, profile) {
-      ub.success = null;
-      ub.secret = null;
+    async function register(reffereeUserName, referralUserName, profile, resolve) {
       if (!reffereeUserName || !referralUserName || !profile) throw new Error('malformed details');
       if (reffereeUserName != 'root' && !await get('root')) throw new Error('root username needs to exist first');
       if (referralUserName != 'root' && !await get(reffereeUserName)) {
-        ub.success = 'ether the reffereeUserName does not exist or the referralUserName exists';
-        return;
+        return new Promise((resolve) => resolve(['ether the reffereeUserName does not exist or the referralUserName exists']));
       }
       else {
         const already = await get(referralUserName);
         if (already && already !== referralpublicKey) {
-          ub.success = 'ether the reffereeUserName does not exist or the referralUserName exists';
-          return;
+          return new Promise((resolve) => resolve(['ether the reffereeUserName does not exist or the referralUserName exists']));
         }
         else {
           if (!already) {
             if (!options.keyPair) {
-              await base.close();
-              swarm.destroy();
-              if (!secret) {
-                secret = crypto.randomBytes(16).toString('hex');
-                options.keyPair = crypto.keyPair(b4a.from(secret));
-                try { await fs.rm('./db/db', { recursive: true }); } catch (e) {}
-                const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
-                await core.ready();
-                await core.append(b4a.from(options.aes.en(secret)));
-                await core.close();
-              }
-              await restartBase('register', options, reffereeUserName, referralUserName, profile);
+              return new Promise((resolve) => {
+                ;(async function (reffereeUserName, referralUserName, profile, resolve) {
+                  await base.close();
+                  swarm.destroy();
+                  if (!secret) {
+                    secret = crypto.randomBytes(16).toString('hex');
+                    options.keyPair = crypto.keyPair(b4a.from(secret));
+                    try { await fs.rm('./db/db', { recursive: true }); } catch (e) {}
+                    const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
+                    await core.ready();
+                    await core.append(b4a.from(options.encrypt(secret)));
+                    await core.close();
+                  }
+                  await restartBase('register', options, reffereeUserName, referralUserName, profile, resolve);
+                })(reffereeUserName, referralUserName, profile, resolve);
+              });
             }
             else {
-              // return new Promise ((resolve) => { resolve([success, secret]); }); // ?
-              register = null;
+              delete ub.register;
               profile.sig = crypto.sign(b4a.from(profile._id), options.keyPair.secretKey).toString('hex');
               await _put(referralUserName, profile);
               ub.put = _put;
               ub.login = login;
-              ub.success = 'success';
-              ub.secret = secret;
-              return;
+              const pin = secret.substring(0, 3) + secret.substring(secret.length - 3);
+              resolve(['success', secret, pin]);
             }
           }
         }
@@ -221,9 +291,11 @@ const userbase = async (options) => {
 
     if (!options.keyPair) {
       ub = { lookup: get, register, recover, put, close: base.close };
+      console.log(ub);
       resolve(ub);
     }
     else {
+      console.log('b');
       ub = { lookup: get, put: _put, close: base.close, login, recover };
       resolve(ub);
     }
