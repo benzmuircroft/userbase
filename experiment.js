@@ -229,7 +229,7 @@ const userbase = async (options) => {
             let throttle;
             resolve(['success', {
               _id: username,
-              get: async function() { console.log(username);return await ub.lookup(username); },
+              get: async function() { return await ub.lookup(username); },
               put: async function(o) {
                 cache = o;
                 clearTimeout(throttle);
