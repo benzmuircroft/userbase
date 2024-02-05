@@ -30,7 +30,13 @@ const userbase = async (options) => {
       throw new Error('options.quit is expected to be a function that closes the app to stop multiple writers');
     }
 
-    let input, base, swarm, secret, ub;
+    let input, base, swarm, secret, ub, clients;
+
+    function broadcast(d) { // txupdates pushed to all users ...
+      for (let p in users) {
+        users[p].event('broadcast', b4a.from(JSON.stringify(d)));
+      }
+    }
 
     try {
       let core = new Hypercore('./db/db', { valueEncoding: 'utf8', createIfMissing: false });
@@ -52,12 +58,12 @@ const userbase = async (options) => {
       }
       const store = new Corestore(options.keyPair ? options.folderName : RAM);
       await store.ready();
-      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait' && options.loadingFunction) options.loadingFunction();
       if (options.keyPair) input = store.get({ keyPair: options.keyPair });
       let output = store.get({ name: 'output' });
-      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait' && options.loadingFunction) options.loadingFunction();
       if (options.keyPair) await input.ready();
-      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait' && options.loadingFunction) options.loadingFunction();
       await output.ready();
       base = new Autobase({
         inputs: (options.keyPair)? [input] : [],
@@ -79,7 +85,7 @@ const userbase = async (options) => {
           extension: false
         })
       });
-      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait' && options.loadingFunction) options.loadingFunction();
       await base.ready();
       const manager = new AutobaseManager(
         base,
@@ -88,17 +94,30 @@ const userbase = async (options) => {
         store.storage, // Storage for managing autobase keys
         { id: options.folderName } // Options
       );
-      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait' && options.loadingFunction) options.loadingFunction();
       await manager.ready();
       swarm = new Hyperswarm();
-      const clients = {};
-      swarm.on('connection', function(socket) {
-        const stream = store.replicate(socket);
+      if (options.server) clients = {};
+      swarm.on('connection', function(peer) {
+        const stream = store.replicate(peer);
         manager.attachStream(stream); // Attach manager
+        const rpc = new ProtomuxRPC(peer);
+        if (options.server) {
+          rpc.remotePublicKey = peer.remotePublicKey.toString('hex');
+          clients[rpc.remotePublicKey] = rpc;
+          rpc.on('close', async function() {
+            delete clients[rpc.remotePublicKey];
+          });
+        }
+        else {
+          rpc.respond('broadcast', async function(data) {
+            if (options.onBroadcast) options.onBroadcast(data);
+          });
+        }
       });
-      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait' && options.loadingFunction) options.loadingFunction();
       await swarm.join(b4a.alloc(32).fill(options.folderName), { server: true, client: true });
-      if (task == 'wait') options.loadingFunction(options.loadingNumber ++);
+      if (task == 'wait' && options.loadingFunction) options.loadingFunction();
       await swarm.flush();
       goodbye(() => swarm.destroy());
       if (task == 'register') {
@@ -189,9 +208,9 @@ const userbase = async (options) => {
       });
     };
 
-    async function login(password, username, calls, onData) {
+    async function login(password, username, onData) {
       return new Promise((resolve) => {
-        ;(async function (password, username, calls, onData, resolve) {
+        ;(async function (password, username, onData, resolve) {
           const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
           await core.ready();
           const secret = options.decrypt((await core.get(core.length - 1)).toString('hex'));
@@ -205,7 +224,7 @@ const userbase = async (options) => {
             console.log(await knockout(keyPair.publicKey));
             const node = new DHT({ keyPair });
             const phone = node.createServer();
-            calls = [];
+            const calls = [];
             phone.on('connection', function (soc) {
               calls[soc.remotePublicKey.toString('hex')] = soc;
               soc.on('data', async function (d) {
@@ -227,18 +246,23 @@ const userbase = async (options) => {
             await phone.listen();
             let cache = await ub.lookup(username);
             let throttle;
-            resolve(['success', {
-              _id: username,
-              get: async function() { return await ub.lookup(username); },
-              put: async function(o) {
-                cache = o;
-                clearTimeout(throttle);
-                throttle = setTimeout(async function (username, o) { await ub.put(username, o); }, 100, username, o);
+            resolve([
+              'success',
+              { 
+                _id: username,
+                get: async function() { return await ub.lookup(username); },
+                put: async function(o) {
+                  cache = o;
+                  clearTimeout(throttle);
+                  throttle = setTimeout(async function (username, o) { await ub.put(username, o); }, 100, username, o);
+                },
+                close: ub.close
               },
-              close: ub.close
-            }]);
+              options.server ? broadcast : undefined,
+              options.server ? clients : undefined
+            ]);
           }
-        })(password, username, calls, onData, resolve);
+        })(password, username, onData, resolve);
       });
     }
   
@@ -261,7 +285,7 @@ const userbase = async (options) => {
                   await base.close();
                   swarm.destroy();
                   if (!secret) {
-                    secret = crypto.randomBytes(16).toString('hex');
+                    secret = options.secret || crypto.randomBytes(16).toString('hex');
                     options.keyPair = crypto.keyPair(b4a.from(secret));
                     try { await fs.rm('./db/db', { recursive: true }); } catch (e) {}
                     const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
