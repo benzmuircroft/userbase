@@ -12,6 +12,7 @@ const userbase = async (options) => {
     const crypto = require('hypercore-crypto');
     const goodbye = (await import('graceful-goodbye')).default;
     const RAM = require('random-access-memory');
+    const ProtomuxRPC = require('protomux-rpc');
     const fs = (await require('fs')).promises;
 
     if (!options) {
@@ -29,15 +30,18 @@ const userbase = async (options) => {
     if (!options.quit || typeof options.quit != 'function') {
       throw new Error('options.quit is expected to be a function that closes the app to stop multiple writers');
     }
-
-    let input, base, swarm, secret, ub, clients;
-
-    function broadcast(d) { // txupdates pushed to all users ...
-      for (let p in users) {
-        users[p].event('broadcast', b4a.from(JSON.stringify(d)));
-      }
+    if (!options.knockout) {
+      throw new Error('options.knockout is expected to be a function that closes the app to stop multiple writers');
     }
 
+    let input, base, swarm, secret, ub, clients; // clients all have random publicKeys
+
+    function broadcast(d) { // txupdates pushed to all users ...
+      for (let p in clients) {
+        clients[p].event('broadcast', b4a.from(JSON.stringify(d)));
+      }
+    }
+    
     try {
       let core = new Hypercore('./db/db', { valueEncoding: 'utf8', createIfMissing: false });
       await core.ready();
@@ -99,6 +103,7 @@ const userbase = async (options) => {
       swarm = new Hyperswarm();
       if (options.server) clients = {};
       swarm.on('connection', function(peer) {
+        if (options.pngStore) options.pngStore.replicate(peer); // plug in pngDrive 
         const stream = store.replicate(peer);
         manager.attachStream(stream); // Attach manager
         const rpc = new ProtomuxRPC(peer);
@@ -110,8 +115,8 @@ const userbase = async (options) => {
           });
         }
         else {
-          rpc.respond('broadcast', async function(data) {
-            if (options.onBroadcast) options.onBroadcast(data);
+          rpc.respond('broadcast', async function(d) { // todo: async or not
+            if (options.onBroadcast.handler) options.onBroadcast.handler(d);
           });
         }
       });
@@ -188,29 +193,38 @@ const userbase = async (options) => {
       });
     }
 
-    const knockout = async (yourPublicKey) => { // find out if the user is already running a server on the DHT and send them a boot out message before any login!
-      return new Promise((resolve) => {
-        ;(async function(yourPublicKey, resolve) {
-          const phone = new DHT(); // make a phone call to a user
-          await phone.ready();
-          let call = phone.connect(yourPublicKey);
-          call.on('open', function () {
-            console.log('Client connected!');
-            call.write(b4a.from(JSON.stringify({ punch: true }))); // knock them out!
-            call.end();
-            resolve(true);
-          });
-          call.on('error', function (err) {
-            console.log('Client errored:', err);
-            resolve(false);
-          });
-        })(yourPublicKey, resolve);
-      });
+    
+
+    const phone = {
+      node: undefined,
+      setup: async function(userbaseKeyPair) { // done on login
+        this.node = new DHT(userbaseKeyPair);
+        await this.node.ready();
+      },
+      call: async (method, remoteUserbasePublicKey, d) => {
+        return new Promise((resolve) => {
+          ;(async function(remoteUserbasePublicKey, d, resolve) {
+            let req = this.node.connect(remoteUserbasePublicKey);
+            req.on('open', function() {
+              req.write(b4a.from(JSON.stringify([method, d])));
+            });
+            req.on('error', function (error) {
+              console.log('Client errored:', error);
+              req.end();
+              resolve({ error });
+            });
+            req.on('data', function(r) {
+              req.end();
+              resolve(r);
+            });
+          })(remoteUserbasePublicKey, d, resolve);
+        });
+      }
     };
 
-    async function login(password, username, onData) {
+    async function login(password, username, onCall) {
       return new Promise((resolve) => {
-        ;(async function (password, username, onData, resolve) {
+        ;(async function (password, username, onCall, resolve) {
           const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
           await core.ready();
           const secret = options.decrypt((await core.get(core.length - 1)).toString('hex'));
@@ -221,11 +235,11 @@ const userbase = async (options) => {
             resolve([false]);
           }
           else {
-            console.log(await knockout(keyPair.publicKey));
+            console.log(await options.knockout(keyPair.publicKey));
             const node = new DHT({ keyPair });
-            const phone = node.createServer();
+            const server = node.createServer();
             const calls = [];
-            phone.on('connection', function (soc) {
+            server.on('connection', function (soc) {
               calls[soc.remotePublicKey.toString('hex')] = soc;
               soc.on('data', async function (d) {
                 let er;
@@ -233,7 +247,7 @@ const userbase = async (options) => {
                 catch (e) { er = e; }
                 if (!er) {
                   if (d.punch) options.quit();
-                  else await onData(soc, d);
+                  else await onCall(soc, d); // has the userbasePublicKey of the user that is calling you
                 }
               });
               soc.on('error', function (e) {
@@ -243,33 +257,65 @@ const userbase = async (options) => {
                 delete calls[soc.remotePublicKey.toString('hex')];
               });
             });
-            await phone.listen();
+            await server.listen();
             let cache = await ub.lookup(username);
+            await phone.setup(crypto.keyPair(b4a.from(options.decrypt(cache.userbase)))); // you can call userbase individuals
             let throttle;
-            resolve([
-              'success',
-              { 
-                _id: username,
-                get: async function() { return await ub.lookup(username); },
-                put: async function(o) {
-                  cache = o;
-                  clearTimeout(throttle);
-                  throttle = setTimeout(async function (username, o) { await ub.put(username, o); }, 100, username, o);
+            if (options.server) {
+              resolve([
+                'success',
+                { 
+                  _id: username,
+                  get: async function() { return await ub.lookup(username); },
+                  put: async function(o) {
+                    cache = o;
+                    clearTimeout(throttle);
+                    throttle = setTimeout(async function (username, o) { await ub.put(username, o); }, 100, username, o);
+                  },
+                  close: ub.close
                 },
-                close: ub.close
-              },
-              options.server ? broadcast : undefined,
-              options.server ? clients : undefined
-            ]);
+                broadcast,
+                phone.call,
+                keyPair,
+                username != 'seed' ? undefined : {
+                  put: async function(object, o) { // seed can put additional structure here without hurting users
+                    o.type = 'ob';
+                    return await ub.put('@' + object, o);
+                  },
+                  get: async function(object) { return await ub.lookup('@' + object); }
+                }
+              ]);
+            }
+            else {
+              resolve([
+                'success',
+                { 
+                  _id: username,
+                  put: async function(o) {
+                    cache = o;
+                    clearTimeout(throttle);
+                    throttle = setTimeout(async function (username, o) { await ub.put(username, o); }, 100, username, o);
+                  },
+                  get: async function() { return await ub.lookup(username); },
+                  close: ub.close
+                },
+                phone.call,
+                keyPair,
+                username != 'seed' ? undefined : {
+                  put: async function(object, o) { return await ub.put('@' + object, o); }, // seed can put additional structure here without hurting users
+                  get: async function(object) { return await ub.lookup('@' + object); }
+                }
+              ]);
+            }
           }
-        })(password, username, onData, resolve);
+        })(password, username, onCall, resolve);
       });
     }
   
     async function register(reffereeUserName, referralUserName, profile, resolve) {
       if (!reffereeUserName || !referralUserName || !profile) throw new Error('malformed details');
-      if (reffereeUserName != 'root' && !await get('root')) throw new Error('root username needs to exist first');
-      if (referralUserName != 'root' && !await get(reffereeUserName)) {
+      if (reffereeUserName != 'seed' && !await get('seed')) throw new Error('seed username needs to exist first');
+      if (referralUserName != 'seed' && !await get(reffereeUserName)) {
         return new Promise((resolve) => resolve(['ether the reffereeUserName does not exist or the referralUserName exists']));
       }
       else {
@@ -298,8 +344,13 @@ const userbase = async (options) => {
               });
             }
             else {
-              delete ub.register;
-              profile.sig = crypto.sign(b4a.from(profile._id), options.keyPair.secretKey).toString('hex');
+              delete ub.register; // function only can be done once !
+              profile = {
+                ...profile,
+                sig:        crypto.sign(b4a.from(profile._id), options.keyPair.secretKey).toString('hex'), // used in userbase.recover
+                userbase:   options.encrypt(crypto.randomBytes(16).toString('hex')), // todo
+                hyperdown:  options.hyperdown ? options.encrypt(crypto.randomBytes(16).toString('hex')) : undefined
+              };
               await _put(referralUserName, profile);
               ub.put = _put;
               ub.login = login;
@@ -315,11 +366,9 @@ const userbase = async (options) => {
 
     if (!options.keyPair) {
       ub = { lookup: get, register, recover, put, close: base.close };
-      console.log(ub);
       resolve(ub);
     }
     else {
-      console.log('b');
       ub = { lookup: get, put: _put, close: base.close, login, recover };
       resolve(ub);
     }
