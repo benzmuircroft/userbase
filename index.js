@@ -46,7 +46,7 @@ const userbase = async (options) => {
     try {
       let core = new Hypercore('./db/db', { valueEncoding: 'utf8', createIfMissing: false });
       await core.ready();
-      secret = options.decrypt((await core.get(core.length - 1)).toString('hex'));
+      secret = options.decrypt((await core.get(core.length - 1)).toString('hex')).slice(0, 32);
       console.log('secret:', secret);
       options.keyPair = crypto.keyPair(b4a.from(secret));
       await core.close();
@@ -238,7 +238,7 @@ const userbase = async (options) => {
         ;(async function (password, username, onCall, resolve) {
           const core = new Hypercore('./db/db', { valueEncoding: 'utf8' });
           await core.ready();
-          const secret = options.decrypt((await core.get(core.length - 1)).toString('hex'));
+          const secret = options.decrypt((await core.get(core.length - 1)).toString('hex')).slice(0, 32);
           await core.close();
           const keyPair = crypto.keyPair(b4a.from(secret));
           const pin = secret.substring(0, 3) + secret.substring(secret.length - 3);
@@ -349,11 +349,12 @@ const userbase = async (options) => {
                 swarm.destroy();
                 if (!secret) {
                   if (options.entropy) {
-                    secret = entropyHex(options.entropy[0], options.entropy[1]); // for users 16, for coins trim the date console.log(new Date(Number((+new Date() + '').slice(0, 8) + '00000'))) (the date is just 8 long but accurate)
+                    secret = entropyHex(options.entropy); // for users 16, for coins trim the date console.log(new Date(Number((+new Date() + '').slice(0, 8) + '00000'))) (the date is just 8 long but accurate)
                   }
                   else {
                     secret = options.secret || crypto.randomBytes(16).toString('hex'); // length is 2 x 16 = 32 // todo: coins and seed use this method but users use entropyHex(16)
                   }
+                  console.log(secret);
                   //                        281474976710656 (281 trillion combinations)
                   // each user could create 408008439348625 unique keyPairs out of 115000000000000000000000000000000000000000000000000000000000000000000
                   options.keyPair = crypto.keyPair(b4a.from(secret));
@@ -386,12 +387,12 @@ const userbase = async (options) => {
       }
     }
 
-    function entropyHex(n, m) { // if n == 16 (bytes, reducer of the minimum length)
+    function entropyHex(m) {
       if (typeof m !== 'number' || m < 0) m = 0; // normalize
       let d = (+new Date()) + ''; // '1708891062610'.length == 13
       if (m) d = d.slice(0, m); // raise the m number to lower the minimum length of the timestamp giving more space to the bytes
-      const l = (n * 2) - d.length; // l = (16 * 2 - 13) which is 19
-      return d + crypto.randomBytes(l).toString('hex'); // something like 1708891062610ae43b6043ef1bcbd89a (length 32)
+      let h = d + (crypto.randomBytes(32).toString('hex'));
+      return h.slice(0, 32); // something like 1708891062610ae43b6043ef1bcbd89a
     }
 
     // todo: each user is the dht bootstrap ...
