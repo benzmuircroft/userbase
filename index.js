@@ -396,7 +396,7 @@ const userbase = async (options) => {
     }
 
     // todo: each user is the dht bootstrap ...
-    function nextKeyPair(secretKey) { // if every user user 3 keyPairs there would be 115000000000000000000000000000000000000000000000000000000000000000000 combinations (one hundred fifteen unvigintillion)
+    function nextKeyPair(secretKey) { // if every user used 3 keyPairs there would be 115000000000000000000000000000000000000000000000000000000000000000000 combinations (one hundred fifteen unvigintillion)
       let md = forge.md.sha256.create();
       md.update(secretKey.toString('hex')); // creates a new seed
       return crypto.keyPair(b4a.alloc(32, md.digest().toHex())); // a predetermined, unique and recovrable keyPair
