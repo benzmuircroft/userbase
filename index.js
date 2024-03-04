@@ -205,8 +205,8 @@ const userbase = async (options) => {
       },
       call: async (method, remoteUserbasePublicKeyHex, d) => {
         return new Promise((resolve) => {
-          console.log('calling:', method, options.decrypt(remoteUserbasePublicKeyHex));
-          let req = phone.node.connect(b4a.from(options.decrypt(remoteUserbasePublicKeyHex), 'hex'), { keyPair: phone.keyPair }); // call them as you
+          console.log('calling:', method, options.decrypt(remoteUserbasePublicKeyHex).slice(0, 64));
+          let req = phone.node.connect(b4a.from(options.decrypt(remoteUserbasePublicKeyHex).slice(0, 64), 'hex'), { keyPair: phone.keyPair }); // call them as you
           req.on('open', function() {
             console.log('sending >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>');
             req.write(JSON.stringify([method, d]));
@@ -396,7 +396,7 @@ const userbase = async (options) => {
     }
 
     // todo: each user is the dht bootstrap ...
-    function nextKeyPair(secretKey) { // if every user used 3 keyPairs there would be 115000000000000000000000000000000000000000000000000000000000000000000 combinations (one hundred fifteen unvigintillion)
+    function nextKeyPair(secretKey) { // if every user user 3 keyPairs there would be 115000000000000000000000000000000000000000000000000000000000000000000 combinations (one hundred fifteen unvigintillion)
       let md = forge.md.sha256.create();
       md.update(secretKey.toString('hex')); // creates a new seed
       return crypto.keyPair(b4a.alloc(32, md.digest().toHex())); // a predetermined, unique and recovrable keyPair
