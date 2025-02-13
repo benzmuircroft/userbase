@@ -1,5 +1,5 @@
 # 🕳🥊 Userbase 😀
-A shared user invite-only, registration, login and recovery - profile database - self-writer network
+🕳🥊😀  A auto-slimming, shared user, invite-only, registration, login and recovery - profile database - self-writer network
 
 ## Installation
 ```
