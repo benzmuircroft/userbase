@@ -1,5 +1,5 @@
 # 🕳🥊 Userbase 😀
-A user invite-only registration system
+A shared user invite-only , registration, login and recovery profile database system
 
 ## Installation
 ```
