@@ -60,3 +60,5 @@ npm i "github:benzmuircroft/userbase"
   
 })();
 ```
+## TODO
+- document switching user roles (it is ether this module or another that lets you write to cores with a role)
